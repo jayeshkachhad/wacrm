@@ -16,6 +16,7 @@ import {
   RATE_LIMITS,
 } from '@/lib/rate-limit'
 import { getT } from '@/lib/i18n/translate'
+import { recordBroadcastMessageToInbox } from '@/lib/whatsapp/broadcast-inbox'
 
 const t = getT('Api')
 
@@ -50,6 +51,7 @@ interface BroadcastResult {
  */
 interface NewRecipient {
   phone: string
+  contact_id?: string
   /** Body variable values, one per {{N}}. Legacy field. */
   params?: string[]
   /**
@@ -220,6 +222,35 @@ export async function POST(request: Request) {
           whatsapp_message_id: sentMessageId,
         })
         sentCount++
+
+        // Record template message into conversations & messages so it appears in Inbox
+        let contactId = recipient.contact_id
+        if (!contactId) {
+          const { data: c } = await supabase
+            .from('contacts')
+            .select('id')
+            .eq('account_id', accountId)
+            .eq('phone', sanitized)
+            .maybeSingle()
+          contactId = c?.id
+        }
+
+        if (contactId) {
+          try {
+            await recordBroadcastMessageToInbox(supabase, {
+              accountId,
+              userId,
+              contactId,
+              templateName: template_name,
+              templateRow,
+              params: recipient.params ?? [],
+              messageParams: recipient.messageParams,
+              whatsappMessageId: sentMessageId,
+            })
+          } catch (inboxErr) {
+            console.error('[broadcast] failed to record message to inbox:', inboxErr)
+          }
+        }
       } else {
         console.error(
           `Failed to send broadcast to ${recipient.phone}:`,

@@ -28,6 +28,7 @@ import {
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
+import { recordBroadcastMessageToInbox } from '@/lib/whatsapp/broadcast-inbox';
 
 /** Thrown by createBroadcast on a caller-visible failure; route maps it. */
 export class BroadcastError extends Error {
@@ -59,10 +60,13 @@ interface PlannedRecipient {
   recipientRowId: string;
   phone: string;
   params: string[];
+  contactId?: string;
 }
 
 export interface BroadcastPlan {
   broadcastId: string;
+  accountId?: string;
+  userId?: string;
   templateName: string;
   templateLanguage: string;
   phoneNumberId: string;
@@ -229,12 +233,14 @@ export async function createBroadcast(
   const planned: PlannedRecipient[] = createdRows.map(
     (row: { recipient_id: string; contact_id: string }) => {
       const r = byContact.get(row.contact_id)!;
-      return { recipientRowId: row.recipient_id, phone: r.phone, params: r.params };
+      return { recipientRowId: row.recipient_id, phone: r.phone, params: r.params, contactId: row.contact_id };
     }
   );
 
   return {
     broadcastId,
+    accountId,
+    userId: auditUserId,
     templateName,
     templateLanguage: resolvedTemplate.language,
     phoneNumberId: config.phone_number_id,
@@ -299,6 +305,22 @@ export async function deliverBroadcast(
           error_message: null,
         })
         .eq('id', recipient.recipientRowId);
+
+      if (plan.accountId && recipient.contactId) {
+        try {
+          await recordBroadcastMessageToInbox(db, {
+            accountId: plan.accountId,
+            userId: plan.userId || '',
+            contactId: recipient.contactId,
+            templateName: plan.templateName,
+            templateRow: plan.templateRow,
+            params: recipient.params,
+            whatsappMessageId: sentMessageId,
+          });
+        } catch (inboxErr) {
+          console.error('[broadcast-core] failed to record message to inbox:', inboxErr);
+        }
+      }
     } else {
       await db
         .from('broadcast_recipients')
