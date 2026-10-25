@@ -98,6 +98,13 @@ interface WhatsAppMessage {
   button?: { text?: string; payload?: string }
   /** Present when the customer swipe-replies to one of our messages. */
   context?: { id: string }
+  /** Present when a customer shares contact cards. */
+  contacts?: Array<{
+    name?: { formatted_name?: string; first_name?: string; last_name?: string }
+    phones?: Array<{ phone?: string; type?: string }>
+  }>
+  /** Present on unsupported messages or errors from Meta. */
+  errors?: MetaStatusError[]
 }
 
 /** One entry of a failed status's `errors` array, as Meta sends it. */
@@ -1130,10 +1137,43 @@ async function parseMessageContent(
       }
     }
 
+    case 'contacts': {
+      if (message.contacts && message.contacts.length > 0) {
+        const contactDetails = message.contacts
+          .map((c) => {
+            const name =
+              c.name?.formatted_name ||
+              [c.name?.first_name, c.name?.last_name].filter(Boolean).join(' ') ||
+              'Contact'
+            const phones = c.phones?.map((p) => p.phone).filter(Boolean).join(', ')
+            return phones ? `${name} (${phones})` : name
+          })
+          .join(', ')
+        return {
+          ...empty,
+          contentText: `📇 Shared contact: ${contactDetails}`,
+        }
+      }
+      return { ...empty, contentText: '📇 [Contact shared]' }
+    }
+
+    case 'unsupported': {
+      const details =
+        message.errors?.[0]?.error_data?.details || message.errors?.[0]?.message
+      return {
+        ...empty,
+        contentText: details
+          ? `[Unsupported message: ${details}]`
+          : '[Unsupported message: e.g. poll, live location, or status reply]',
+      }
+    }
+
     default:
       return {
         ...empty,
-        contentText: `[Unsupported message type: ${message.type}]`,
+        contentText: message.type
+          ? `[Unsupported message type: ${message.type}]`
+          : '[Unsupported message]',
       }
   }
 }
