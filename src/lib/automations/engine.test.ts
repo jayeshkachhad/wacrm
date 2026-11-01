@@ -82,6 +82,10 @@ vi.mock("./admin-client", () => {
       return { data: state.owned, error: null };
     }
     if (table === "conversations") {
+      if (type === "insert") {
+        const row = { id: "conv-auto-created", ...(ops.payload as Record<string, unknown>) };
+        return { data: row, error: null };
+      }
       return { data: state.ownedConversation, error: null };
     }
     if (table === "custom_fields") {
@@ -179,7 +183,7 @@ import {
   runAutomationsForTrigger,
   triggerMatches,
 } from "./engine";
-import { engineSendInteractive, engineSendText } from "./meta-send";
+import { engineSendInteractive, engineSendTemplate, engineSendText } from "./meta-send";
 import type { Automation, KeywordMatchTriggerConfig } from "@/types";
 
 const ACCOUNT = "acct-1";
@@ -1221,6 +1225,50 @@ describe("wait_for_reply", () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  describe("new_contact_created — conversation auto-creation", () => {
+    it("auto-creates a conversation when sending a template to a contact without an existing conversation", async () => {
+      h.state.owned = { id: "c1" };
+      h.state.ownedConversation = null;
+      h.state.automations = [
+        {
+          id: "a-welcome",
+          account_id: ACCOUNT,
+          user_id: "u1",
+          trigger_type: "new_contact_created",
+          trigger_config: {},
+          is_active: true,
+        },
+      ];
+      h.state.steps = [
+        {
+          id: "s-template",
+          automation_id: "a-welcome",
+          step_type: "send_template",
+          position: 0,
+          parent_step_id: null,
+          step_config: {
+            template_name: "welcome_single",
+            language: "en_US",
+          },
+        },
+      ];
+
+      await runAutomationsForTrigger({
+        accountId: ACCOUNT,
+        triggerType: "new_contact_created",
+        contactId: "c1",
+        context: {},
+      });
+
+      expect(engineSendTemplate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversationId: "conv-auto-created",
+          templateName: "welcome_single",
+        })
+      );
     });
   });
 });

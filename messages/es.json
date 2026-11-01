@@ -1196,7 +1196,7 @@
         },
         "new_contact_created": {
           "label": "Nuevo contacto creado",
-          "hint": "Cuando un contacto se crea automáticamente a partir de un mensaje entrante"
+          "hint": "Cuando se crea un contacto (vía mensaje entrante, panel o API)"
         },
         "conversation_assigned": {
           "label": "Conversación asignada",

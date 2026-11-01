@@ -206,6 +206,21 @@ export function ContactForm({
         }
       }
 
+      if (!isEdit && contactId) {
+        try {
+          await fetch('/api/automations/engine', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              trigger_type: 'new_contact_created',
+              contact_id: contactId,
+            }),
+          });
+        } catch (autoErr) {
+          console.error('[contact-form] automation dispatch failed:', autoErr);
+        }
+      }
+
       toast.success(isEdit ? t('toastSuccessEdit') : t('toastSuccessAdd'));
       onOpenChange(false);
       onSaved();

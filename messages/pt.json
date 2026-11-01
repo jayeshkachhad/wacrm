@@ -1196,7 +1196,7 @@
         },
         "new_contact_created": {
           "label": "Novo contato criado",
-          "hint": "Quando um contato é criado automaticamente a partir de uma mensagem recebida"
+          "hint": "Quando um contato é criado (via mensagem recebida, painel ou API)"
         },
         "conversation_assigned": {
           "label": "Conversa atribuída",

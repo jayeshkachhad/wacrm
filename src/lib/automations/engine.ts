@@ -19,6 +19,7 @@ import type {
   AssignConversationStepConfig,
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
+import { isUniqueViolation } from '@/lib/contacts/dedupe'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
@@ -1035,14 +1036,59 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
     .select('id')
     .eq('account_id', args.automation.account_id)
     .eq('contact_id', args.contactId)
+    .order('created_at', { ascending: true })
+    .limit(1)
     .maybeSingle()
   if (error) throw new Error(getT('LibErrors.send')('conversationLookupFailed', { message: error.message }))
-  if (!data?.id) {
-    throw new Error(
-      tErr(args.triggerEvent === 'tag_added' ? 'tagAddedNoConversation' : 'noConversation'),
-    )
+  if (data?.id) return data.id as string
+
+  // For tag_added, preserve the explicit failure policy when no conversation exists
+  if (args.triggerEvent === 'tag_added') {
+    throw new Error(tErr('tagAddedNoConversation'))
   }
-  return data.id as string
+
+  // If no conversation exists yet (e.g. contact was created manually in the panel
+  // or via API/Apps Script and has not messaged first), auto-create one so the
+  // outgoing template/message can land.
+  let userId = args.automation.user_id
+  if (!userId) {
+    const { data: c } = await supabaseAdmin()
+      .from('contacts')
+      .select('user_id')
+      .eq('id', args.contactId)
+      .maybeSingle()
+    userId = c?.user_id
+  }
+
+  const { data: newConv, error: createErr } = await supabaseAdmin()
+    .from('conversations')
+    .insert({
+      account_id: args.automation.account_id,
+      user_id: userId,
+      contact_id: args.contactId,
+    })
+    .select('id')
+    .maybeSingle()
+
+  if (newConv?.id) {
+    return newConv.id as string
+  }
+
+  if (createErr && isUniqueViolation(createErr)) {
+    const { data: raced } = await supabaseAdmin()
+      .from('conversations')
+      .select('id')
+      .eq('account_id', args.automation.account_id)
+      .eq('contact_id', args.contactId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (raced?.id) return raced.id as string
+  }
+
+  throw new Error(
+    tErr(args.triggerEvent === 'tag_added' ? 'tagAddedNoConversation' : 'noConversation'),
+  )
 }
 
 /** Letter, digit or underscore in any script — the "inside a word" test. */

@@ -1196,7 +1196,7 @@
         },
         "new_contact_created": {
           "label": "새 연락처 생성됨",
-          "hint": "수신 메시지로 연락처가 자동 생성되었을 때"
+          "hint": "연락처가 생성되었을 때 (수신 메시지, 패널 또는 API)"
         },
         "conversation_assigned": {
           "label": "대화 담당자 지정됨",

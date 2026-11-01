@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   orFilters: [] as string[],
   queried: false,
+  dispatchedAutomations: [] as Record<string, unknown>[],
+  createdOutcome: true,
 }));
 
 function fakeSupabase() {
@@ -31,11 +33,36 @@ vi.mock('@/lib/auth/api-context', () => ({
   })),
 }));
 
-import { GET } from './route';
+vi.mock('@/lib/automations/engine', () => ({
+  runAutomationsForTrigger: vi.fn(async (args: Record<string, unknown>) => {
+    mocks.dispatchedAutomations.push(args);
+  }),
+}));
+
+vi.mock('@/lib/api/v1/contacts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api/v1/contacts')>();
+  return {
+    ...actual,
+    resolveAuditUserId: vi.fn(async () => 'user-1'),
+    findOrCreateContact: vi.fn(async () => ({
+      id: 'contact-uuid-1',
+      created: mocks.createdOutcome,
+    })),
+    getContactById: vi.fn(async () => ({
+      id: 'contact-uuid-1',
+      phone: '+14155551234',
+      name: 'Test',
+    })),
+  };
+});
+
+import { GET, POST } from './route';
 
 beforeEach(() => {
   mocks.orFilters = [];
   mocks.queried = false;
+  mocks.dispatchedAutomations = [];
+  mocks.createdOutcome = true;
 });
 
 describe('GET /api/v1/contacts', () => {
@@ -59,5 +86,39 @@ describe('GET /api/v1/contacts', () => {
     expect(mocks.orFilters).toContain(
       'name.ilike.*+14155551234*,phone.ilike.*14155551234*'
     );
+  });
+});
+
+describe('POST /api/v1/contacts', () => {
+  it('triggers new_contact_created automation when a contact is newly created', async () => {
+    mocks.createdOutcome = true;
+    const res = await POST(
+      new Request('https://x.test/api/v1/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: '+14155551234', name: 'Test' }),
+      })
+    );
+    expect(res.status).toBe(201);
+    expect(mocks.dispatchedAutomations).toHaveLength(1);
+    expect(mocks.dispatchedAutomations[0]).toEqual({
+      accountId: 'account-1',
+      triggerType: 'new_contact_created',
+      contactId: 'contact-uuid-1',
+      context: {},
+    });
+  });
+
+  it('does NOT trigger new_contact_created automation when contact already exists', async () => {
+    mocks.createdOutcome = false;
+    const res = await POST(
+      new Request('https://x.test/api/v1/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: '+14155551234', name: 'Test' }),
+      })
+    );
+    expect(res.status).toBe(200);
+    expect(mocks.dispatchedAutomations).toHaveLength(0);
   });
 });

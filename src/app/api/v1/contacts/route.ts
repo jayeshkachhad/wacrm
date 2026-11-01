@@ -26,6 +26,7 @@ import {
   ContactError,
   contactSearchFilter,
 } from '@/lib/api/v1/contacts';
+import { runAutomationsForTrigger } from '@/lib/automations/engine';
 
 export async function GET(request: Request) {
   try {
@@ -130,6 +131,19 @@ export async function POST(request: Request) {
         id,
         body.tags.filter((t): t is string => typeof t === 'string')
       );
+    }
+
+    if (created) {
+      try {
+        await runAutomationsForTrigger({
+          accountId: ctx.accountId,
+          triggerType: 'new_contact_created',
+          contactId: id,
+          context: {},
+        });
+      } catch (autoErr) {
+        console.error('[api/v1/contacts] automation dispatch failed:', autoErr);
+      }
     }
 
     const contact = await getContactById(ctx.supabase, ctx.accountId, id);
