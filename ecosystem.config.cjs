@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'wacrm',
       script: '.next/standalone/server.js',
-      cwd: '/var/www/wacrm',
+      cwd: __dirname,
       node_args: '--env-file=.env.local',
       env: {
         PORT: 3017,
